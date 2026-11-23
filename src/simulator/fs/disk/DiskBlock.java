@@ -6,6 +6,7 @@ public class DiskBlock {
     private String label = "";
     private String ownerPath = "";
     private int bytesUsed = 0;
+    private byte[] rawData = new byte[0];
 
     public DiskBlock(int index) {
         this.index = index;
@@ -20,4 +21,6 @@ public class DiskBlock {
     public void setOwnerPath(String ownerPath) { this.ownerPath = ownerPath; }
     public int getBytesUsed() { return bytesUsed; }
     public void setBytesUsed(int bytesUsed) { this.bytesUsed = bytesUsed; }
+    public byte[] getRawData() { return rawData; }
+    public void setRawData(byte[] rawData) { this.rawData = rawData != null ? rawData.clone() : new byte[0]; }
 }

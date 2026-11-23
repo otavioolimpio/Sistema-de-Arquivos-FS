@@ -1,10 +1,6 @@
 package simulator.fs.tree;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class FSNode {
     private final String name;
@@ -14,6 +10,13 @@ public class FSNode {
     private int sizeBytes = 0;
     private int inodeIdx = -1;
     private List<Integer> dataBlocks = new ArrayList<>();
+
+    // Metadados de Segurança (Etapa 3)
+    private String owner = "root";
+    private String group = "admin";
+    private int permissions = 0750; // rwxr-x--- por padrão
+    private boolean encrypted = false;
+    private String officialHash = "";
 
     public FSNode(String name, boolean isDir, FSNode parent) {
         this.name = name;
@@ -32,6 +35,17 @@ public class FSNode {
     public void setInodeIdx(int inodeIdx) { this.inodeIdx = inodeIdx; }
     public List<Integer> getDataBlocks() { return dataBlocks; }
     public void setDataBlocks(List<Integer> dataBlocks) { this.dataBlocks = dataBlocks; }
+
+    public String getOwner() { return owner; }
+    public void setOwner(String owner) { this.owner = owner; }
+    public String getGroup() { return group; }
+    public void setGroup(String group) { this.group = group; }
+    public int getPermissions() { return permissions; }
+    public void setPermissions(int permissions) { this.permissions = permissions; }
+    public boolean isEncrypted() { return encrypted; }
+    public void setEncrypted(boolean encrypted) { this.encrypted = encrypted; }
+    public String getOfficialHash() { return officialHash; }
+    public void setOfficialHash(String officialHash) { this.officialHash = officialHash; }
 
     public String getFullPath() {
         if (parent == null || parent == this) return "/";
