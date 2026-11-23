@@ -1,24 +1,26 @@
 package simulator.fs;
 
 import simulator.fs.core.VirtualFileSystem;
+import simulator.fs.memory.ProcessType;
 import simulator.fs.security.ExecutionMode;
 import simulator.fs.security.User;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Main {
 
     public static void main(String[] args) {
-        // Disco de 32 blocos de 4 KB (128 KB)
         VirtualFileSystem fs = new VirtualFileSystem(32, 4096);
         bootstrapSystemEnvironment(fs);
 
         Scanner scanner = new Scanner(System.in);
-        System.out.println("=================================================================");
-        System.out.println("   SIMULADOR DE SISTEMA DE ARQUIVOS (VFS + E/S + RAID + SEC)     ");
-        System.out.println("   Digite 'demo' para rodar os Exemplos 3.1 e 3.2 ou 'help'.     ");
-        System.out.println("=================================================================\n");
+        System.out.println("=======================================================================");
+        System.out.println("   SIMULADOR DE SO INTEGRADO (VFS + E/S + RAID + SEGURANÇA + MEMÓRIA)  ");
+        System.out.println("   Digite 'demo_mem' (Etapa 4), 'demo' (Etapa 3) ou 'help'.            ");
+        System.out.println("=======================================================================\n");
 
         while (true) {
             User current = fs.getSecurity().getCurrentUser();
@@ -41,8 +43,43 @@ public class Main {
                     printHelp();
                     break;
 
+                case "demo_mem":
+                    runStage4Demo(fs);
+                    break;
+
                 case "demo":
                     runStage3Demo(fs);
+                    break;
+
+                case "create_process":
+                    handleCreateProcess(fs, input);
+                    break;
+
+                case "terminate_process":
+                    handleTerminateProcess(fs, input, tokens);
+                    break;
+
+                case "memory_status":
+                    if (tokens.length > 1 && tokens[1].equalsIgnoreCase("--virtual")) {
+                        System.out.println(fs.getMemory().getVirtualMemoryStatus());
+                    } else if (tokens.length > 1 && tokens[1].equalsIgnoreCase("--reserved")) {
+                        System.out.println(fs.getMemory().getReservedMemoryStatus());
+                    } else {
+                        System.out.println(fs.getMemory().getReservedMemoryStatus());
+                        System.out.println("\n" + fs.getMemory().getVirtualMemoryStatus());
+                    }
+                    break;
+
+                case "memory_compact":
+                    System.out.println(fs.getMemory().compactReservedMemory());
+                    break;
+
+                case "translate_address":
+                    handleTranslateAddress(fs, input);
+                    break;
+
+                case "execute_step":
+                    handleExecuteStep(fs, input);
                     break;
 
                 case "login":
@@ -58,8 +95,7 @@ public class Main {
                     if (tokens.length < 4 || !tokens[2].equalsIgnoreCase("--size")) {
                         System.out.println("Uso: create <caminho> --size <tamanhoKB>");
                     } else {
-                        int bytes = parseSize(tokens[3]);
-                        System.out.println(fs.create(tokens[1], bytes));
+                        System.out.println(fs.create(tokens[1], parseSize(tokens[3])));
                     }
                     break;
 
@@ -83,7 +119,7 @@ public class Main {
                     break;
 
                 case "chmod":
-                    if (tokens.length < 3) System.out.println("Uso: chmod <octal> <caminho> (ex: chmod 750 /sistema/config.sys)");
+                    if (tokens.length < 3) System.out.println("Uso: chmod <octal> <caminho>");
                     else System.out.println(fs.chmod(tokens[2], Integer.parseInt(tokens[1], 8)));
                     break;
 
@@ -92,29 +128,16 @@ public class Main {
                     else System.out.println(fs.chown(tokens[3], tokens[1], tokens[2]));
                     break;
 
-                case "useradd":
-                    if (!fs.getSecurity().isKernelMode()) {
-                        System.out.println("[NEGADO]: Cadastro de usuários exige MODO_KERNEL (root).");
-                    } else if (tokens.length < 4) {
-                        System.out.println("Uso: useradd <usuario> <grupo> <senha>");
-                    } else {
-                        fs.getSecurity().registerUser(tokens[1], tokens[2], tokens[3], ExecutionMode.MODO_USUARIO);
-                        System.out.println("Usuário '" + tokens[1] + "' cadastrado com hash SHA-256 + salt.");
-                    }
-                    break;
-
                 case "encrypt_file":
                     if (tokens.length < 4 || !tokens[2].equalsIgnoreCase("--key")) {
                         System.out.println("Uso: encrypt_file <caminho> --key \"<chave>\"");
                     } else {
-                        String key = tokens[3].replace("\"", "");
-                        System.out.println(fs.encryptFile(tokens[1], key));
+                        System.out.println(fs.encryptFile(tokens[1], tokens[3].replace("\"", "")));
                     }
                     break;
 
                 case "antivirus_scan":
-                    String scanPath = tokens.length >= 2 ? tokens[1] : "/";
-                    System.out.println(fs.antivirusScan(scanPath));
+                    System.out.println(fs.antivirusScan(tokens.length >= 2 ? tokens[1] : "/"));
                     break;
 
                 case "tamper_disk":
@@ -145,12 +168,12 @@ public class Main {
     }
 
     private static void bootstrapSystemEnvironment(VirtualFileSystem fs) {
-        // Inicia como root (MODO_KERNEL) para configurar o sistema
         fs.mkdir("/sistema");
         fs.mkdir("/sistema/logs");
+        fs.mkdir("/sistema/swap");
+        fs.createWithContent("/sistema/swap/pagefile.sys", new byte[4096], 4096);
         fs.createWithContent("/sistema/config.sys", "KERNEL_PARAM=1".getBytes(StandardCharsets.UTF_8), 2048);
-        fs.chmod("/sistema/config.sys", 0750); // rwxr-x--- (root:admin)
-
+        fs.chmod("/sistema/config.sys", 0750);
         fs.createWithContent("/sistema/logs/app.log", "Log inicial do sistema".getBytes(StandardCharsets.UTF_8), 10 * 1024);
 
         fs.mkdir("/home");
@@ -164,29 +187,107 @@ public class Main {
         fs.chmod("/home/carlos/segredo.txt", 0700);
     }
 
+    private static void runStage4Demo(VirtualFileSystem fs) {
+        System.out.println("\n=== EXECUTANDO DEMONSTRAÇÃO DA ETAPA 4 (MEMÓRIA HÍBRIDA, COMPACTAÇÃO E LRU) ===\n");
+
+        // Exemplo 4.1
+        System.out.println("> create_process --name \"Kernel_DiskDriver\" --size 512KB --type critical");
+        System.out.println(fs.createProcess("Kernel_DiskDriver", 512 * 1024, ProcessType.CRITICAL) + "\n");
+
+        System.out.println("> create_process --name \"Kernel_NetDriver\" --size 1024KB --type critical");
+        System.out.println(fs.createProcess("Kernel_NetDriver", 1024 * 1024, ProcessType.CRITICAL) + "\n");
+
+        System.out.println("> create_process --name \"Kernel_CryptoEngine\" --size 512KB --type critical");
+        System.out.println(fs.createProcess("Kernel_CryptoEngine", 512 * 1024, ProcessType.CRITICAL) + "\n");
+
+        System.out.println("> terminate_process --name \"Kernel_NetDriver\"");
+        System.out.println(fs.terminateProcess("Kernel_NetDriver") + "\n");
+
+        System.out.println("> memory_status --reserved");
+        System.out.println(fs.getMemory().getReservedMemoryStatus() + "\n");
+
+        System.out.println("> memory_compact --reserved");
+        System.out.println(fs.getMemory().compactReservedMemory() + "\n");
+
+        // Exemplo 4.2
+        System.out.println("> create_process --name \"App_Navegador\" --size 10KB --type normal");
+        System.out.println(fs.createProcess("App_Navegador", 10 * 1024, ProcessType.NORMAL) + "\n");
+
+        System.out.println("> translate_address --process App_Navegador --page 1");
+        System.out.println(fs.getMemory().translateAddress("App_Navegador", 1) + "\n");
+
+        System.out.println("> execute_step --process App_Navegador --instruction \"LOAD_DATA Página 2\"");
+        System.out.println(fs.executeMemoryStep("App_Navegador", 2) + "\n");
+    }
+
     private static void runStage3Demo(VirtualFileSystem fs) {
         System.out.println("\n=== EXECUTANDO DEMONSTRAÇÃO DA ETAPA 3 ===\n");
-
-        // Exemplo 3.1: Autenticação e Verificação de ACL
-        System.out.println("> login --user carlos");
-        System.out.println("Senha: **********");
         fs.getSecurity().authenticate("carlos", "senha12345");
-        User u = fs.getSecurity().getCurrentUser();
-        System.out.println(String.format("Autenticado com sucesso. Usuário: '%s' | Grupo: '%s' | Modo: %s\n",
-                u.getUsername(), u.getGroup(), u.getMode()));
-
-        System.out.println("> read_file /sistema/config.sys");
         System.out.println(fs.readFile("/sistema/config.sys") + "\n");
-
-        // Exemplo 3.2: Criptografia de Conteúdo e Anti-Vírus Simulado
-        System.out.println("> encrypt_file /home/carlos/segredo.txt --key \"MinhaChave123\"");
         System.out.println(fs.encryptFile("/home/carlos/segredo.txt", "MinhaChave123") + "\n");
-
-        // Simula alteração direta indevida no bloco físico de app.log
         fs.simulateDirectDiskTampering("/sistema/logs/app.log", "ALTERACAO_INDEVIDA_RAW_BLOCK");
-
-        System.out.println("> antivirus_scan /");
         System.out.println(fs.antivirusScan("/"));
+    }
+
+    private static void handleCreateProcess(VirtualFileSystem fs, String input) {
+        String name = extractFlagValue(input, "--name");
+        String sizeStr = extractFlagValue(input, "--size");
+        String typeStr = extractFlagValue(input, "--type");
+
+        if (name == null || sizeStr == null || typeStr == null) {
+            System.out.println("Uso: create_process --name \"<nome>\" --size <tamanhoKB> --type <critical|normal>");
+            return;
+        }
+        int sizeBytes = parseSize(sizeStr);
+        ProcessType type = typeStr.equalsIgnoreCase("critical") ? ProcessType.CRITICAL : ProcessType.NORMAL;
+        System.out.println(fs.createProcess(name, sizeBytes, type));
+    }
+
+    private static void handleTerminateProcess(VirtualFileSystem fs, String input, String[] tokens) {
+        String name = extractFlagValue(input, "--name");
+        if (name == null && tokens.length >= 2) {
+            name = tokens[1].replace("\"", "");
+        }
+        if (name == null) {
+            System.out.println("Uso: terminate_process --name \"<nome>\"");
+            return;
+        }
+        System.out.println(fs.terminateProcess(name));
+    }
+
+    private static void handleTranslateAddress(VirtualFileSystem fs, String input) {
+        String process = extractFlagValue(input, "--process");
+        String pageStr = extractFlagValue(input, "--page");
+        if (process == null || pageStr == null) {
+            System.out.println("Uso: translate_address --process <nome> --page <numero>");
+            return;
+        }
+        System.out.println(fs.getMemory().translateAddress(process, Integer.parseInt(pageStr)));
+    }
+
+    private static void handleExecuteStep(VirtualFileSystem fs, String input) {
+        String process = extractFlagValue(input, "--process");
+        String instruction = extractFlagValue(input, "--instruction");
+        if (process == null || instruction == null) {
+            System.out.println("Uso: execute_step --process <nome> --instruction \"LOAD_DATA Página <num>\"");
+            return;
+        }
+        Matcher m = Pattern.compile("(\\d+)").matcher(instruction);
+        if (!m.find()) {
+            System.out.println("Erro: Número da página não identificado na instrução.");
+            return;
+        }
+        int pageNum = Integer.parseInt(m.group(1));
+        System.out.println(fs.executeMemoryStep(process, pageNum));
+    }
+
+    private static String extractFlagValue(String input, String flag) {
+        Pattern p = Pattern.compile(Pattern.quote(flag) + "\\s+(?:\"([^\"]+)\"|(\\S+))", Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(input);
+        if (m.find()) {
+            return m.group(1) != null ? m.group(1) : m.group(2);
+        }
+        return null;
     }
 
     private static void handleLogin(VirtualFileSystem fs, Scanner scanner, String[] tokens) {
@@ -194,11 +295,9 @@ public class Main {
             System.out.println("Uso: login --user <usuario>");
             return;
         }
-        String username = tokens[2];
         System.out.print("Senha: ");
         String password = scanner.nextLine();
-
-        if (fs.getSecurity().authenticate(username, password)) {
+        if (fs.getSecurity().authenticate(tokens[2], password)) {
             User u = fs.getSecurity().getCurrentUser();
             System.out.println(String.format("Autenticado com sucesso. Usuário: '%s' | Grupo: '%s' | Modo: %s",
                     u.getUsername(), u.getGroup(), u.getMode()));
@@ -209,6 +308,9 @@ public class Main {
 
     private static int parseSize(String sizeStr) {
         sizeStr = sizeStr.toUpperCase().trim();
+        if (sizeStr.endsWith("MB")) {
+            return (int) (Double.parseDouble(sizeStr.replace("MB", "").trim()) * 1024 * 1024);
+        }
         if (sizeStr.endsWith("KB")) {
             return (int) (Double.parseDouble(sizeStr.replace("KB", "").trim()) * 1024);
         }
@@ -216,21 +318,16 @@ public class Main {
     }
 
     private static void printHelp() {
-        System.out.println("\nComandos Disponíveis (Etapas 1, 2 e 3):");
-        System.out.println("  demo                                        Executa os Exemplos 3.1 e 3.2");
-        System.out.println("  login --user <usuario>                      Autentica usuário (senhas padrão: root123 / senha12345)");
-        System.out.println("  useradd <user> <grupo> <senha>              Cadastra usuário [MODO_KERNEL]");
-        System.out.println("  mkdir <caminho>                             Cria diretório");
-        System.out.println("  create <caminho> --size <KB>                Cria arquivo e aloca blocos");
-        System.out.println("  read_file <caminho>                         Lê arquivo validando ACL");
-        System.out.println("  write_file <caminho> <texto>                Grava dados com E/S SSTF e RAID 5");
-        System.out.println("  delete <caminho>                            Remove arquivo/diretório");
-        System.out.println("  chmod <octal> <caminho>                     Altera permissões rwx (ex: 750)");
-        System.out.println("  chown <user> <grupo> <caminho>              Altera proprietário [MODO_KERNEL]");
-        System.out.println("  encrypt_file <caminho> --key \"<chave>\"      Criptografa arquivo em repouso (AES)");
-        System.out.println("  antivirus_scan <caminho>                    Audita hashes dos blocos e assinaturas");
-        System.out.println("  tamper_disk <caminho>                       Simula corrupção direta no bloco físico");
-        System.out.println("  logs                                        Exibe tentativas de acesso negadas");
-        System.out.println("  tree | fs_status | exit\n");
+        System.out.println("\nComandos de Memória (Etapa 4):");
+        System.out.println("  demo_mem                                                     Executa Exemplos 4.1 e 4.2");
+        System.out.println("  create_process --name \"<n>\" --size <KB> --type <critical|normal>");
+        System.out.println("  terminate_process --name \"<n>\"                               Finaliza processo e libera RAM");
+        System.out.println("  memory_status [--reserved | --virtual]                       Exibe mapa e fragmentação");
+        System.out.println("  memory_compact --reserved                                    Compacta Área Reservada da RAM");
+        System.out.println("  translate_address --process <n> --page <num>                 Traduz Página Lógica -> Moldura");
+        System.out.println("  execute_step --process <n> --instruction \"LOAD_DATA Página <num>\"");
+        System.out.println("\nComandos de Arquivos, E/S, RAID e Segurança (Etapas 1, 2 e 3):");
+        System.out.println("  demo | login --user <u > | mkdir | create | read_file | write_file | delete");
+        System.out.println("  chmod | chown | encrypt_file | antivirus_scan | tamper_disk | logs | tree | fs_status | exit\n");
     }
 }
